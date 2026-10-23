@@ -132,6 +132,40 @@ Outputs saved to `reports/`:
 
 ## Prediction
 
+### Leaf gate
+
+Before disease classification, the application runs a frozen zero-shot CLIP
+ViT-B/32 gate. It sums CLIP's softmax probabilities for leaf prompts and rejects
+images below the validation-tuned threshold saved in `models/leaf_gate.json`.
+CLIP is never trained or fine-tuned.
+
+Prepare the non-leaf manifest once (the command removes corrupt and duplicate
+images before assigning a deterministic 70/15/15 split):
+
+```powershell
+python scripts/prepare_negatives.py --use-sklearn-digits --limit 500
+python scripts/tune_leaf_gate.py
+```
+
+The threshold is tuned only on the validation splits. Run this held-out test
+command once after tuning:
+
+```powershell
+python scripts/evaluate_leaf_gate.py
+python evaluate.py
+```
+
+| Measurement | Before gate | After gate |
+| --- | ---: | ---: |
+| Non-leaf images accepted by the disease-model 90% confidence rule | 0/100 (0.0%) | n/a — CLIP rejects before disease inference |
+| Held-out non-leaf images rejected by the gate | n/a | 75/75 (100.0%) |
+| Held-out real leaf images wrongly rejected by the gate | n/a | 168/3,102 (5.42%) |
+| Disease-model held-out accuracy | 96.23% (unchanged model) | 96.23% |
+
+The baseline used 100 non-leaf training images only; the after-gate measurements
+use the held-out non-leaf and leaf test splits. The supplied `leaf_gate.json`
+was tuned at a threshold of `0.9959240556` using validation images only.
+
 ```powershell
 python predict.py path/to/leaf.jpg
 ```
@@ -156,6 +190,13 @@ Treatment:
 ```
 
 If confidence is below 90%:
+```
+
+If the leaf gate rejects the upload, the response has `status: "not_a_leaf"`
+and contains no disease classification or treatment:
+
+```
+This does not look like a plant leaf. Please upload a clear photo of a single leaf in good light.
 ```
 Not sure (confidence 62.1%). Please retake a clear photo of a single leaf in good light.
 ```
@@ -245,7 +286,7 @@ plant-disease/
 ## Limitations
 
 - **Controlled photos:** The PlantVillage dataset consists of photos taken against plain backgrounds in controlled conditions. Accuracy on real field photos (cluttered background, variable lighting, multiple leaves) will likely be **lower** than reported numbers.
-- **Leaf check:** The model does not verify that the uploaded image actually shows a leaf. Non-leaf images will still receive a prediction.
+- **Leaf gate scope:** The gate checks whether the image appears to be a leaf, not which crop it is. Unusual images can still pass, and genuine leaves can be rejected.
 - **Crop scope:** Only covers crops present in PlantVillage. It will not recognise diseases of crops it was not trained on.
 - **Treatment guidance:** Treatment information is general. Always follow product labels and local agricultural advice. Consult an agricultural expert before applying any treatment.
 - **Not a substitute for expert diagnosis:** This tool is a screening aid, not a certified diagnostic system.
