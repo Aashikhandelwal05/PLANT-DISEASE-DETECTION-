@@ -1,0 +1,55 @@
+# Data and models (large files, not committed)
+data/
+models/
+reports/
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Model checkpoints
+*.pt
+*.pth
+*.ckpt
+
+# Environment variables
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# Test cache
+.pytest_cache/
+.pytest_tmp/
+.coverage
+htmlcov/
