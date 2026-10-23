@@ -41,6 +41,7 @@ from PIL import Image, UnidentifiedImageError
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent))
 from predict import load_model, predict_image
+from app.leaf_gate import LeafGate, get_leaf_gate
 from utils import get_logger
 
 load_dotenv()
@@ -71,13 +72,15 @@ ACCEPTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"
 _model = None
 _classes: list[str] = []
 _device = None
+_leaf_gate: LeafGate | None = None
 
 
 @app.on_event("startup")
 def _startup() -> None:
-    global _model, _classes, _device
+    global _model, _classes, _device, _leaf_gate
     try:
         _model, _classes, _device = load_model()
+        _leaf_gate = get_leaf_gate()
         logger.info("Model loaded. Classes: %d", len(_classes))
     except FileNotFoundError as exc:
         logger.error("Cannot start API — model not found: %s", exc)
@@ -193,7 +196,9 @@ async def predict(
             tf.write(tmp.read())
             tmp_path = Path(tf.name)
 
-        result = predict_image(tmp_path, _model, _classes, _device, top_k=3)
+        result = predict_image(
+            tmp_path, _model, _classes, _device, top_k=3, leaf_gate=_leaf_gate
+        )
     except Exception as exc:
         logger.error("Inference failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Inference failed.")
@@ -204,8 +209,19 @@ async def predict(
             pass
 
     # ── Build response ─────────────────────────────────────────────────────────
+    if result.get("status") == "not_a_leaf":
+        return JSONResponse(
+            content={
+                "status": "not_a_leaf",
+                "message": result["message"],
+                "leaf_score": round(result["leaf_score"], 4),
+            }
+        )
+
     return JSONResponse(
         content={
+            "status": "ok",
+            "leaf_score": round(result["leaf_score"], 4),
             "crop":       result["crop"],
             "disease":    result["disease"],
             "class_name": result["class_name"],

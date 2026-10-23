@@ -36,6 +36,15 @@ DUMMY_CLASSES = [
 ]
 
 
+class MockGate:
+    def __init__(self, accepted: bool = True, score: float = 0.99):
+        self.accepted = accepted
+        self.score = score
+
+    def accepts(self, image):
+        return self.accepted, self.score
+
+
 def _build_dummy_model():
     m = models.efficientnet_b0(weights=None)
     in_feat = m.classifier[1].in_features
@@ -60,11 +69,13 @@ def _patch_api_state():
     api._classes = DUMMY_CLASSES
     api._device  = torch.device("cpu")
     api._API_KEY = "test-secret-key"
+    api._leaf_gate = MockGate()
     yield
     # Restore
     api._model   = None
     api._classes = []
     api._API_KEY = ""
+    api._leaf_gate = None
 
 
 @pytest.fixture(scope="module")
@@ -108,6 +119,23 @@ def test_wrong_api_key_returns_401(client):
         files={"file": ("leaf.png", img_bytes, "image/png")},
     )
     assert resp.status_code == 401
+
+
+def test_not_a_leaf_has_no_disease_or_treatment(client):
+    import api
+    api._leaf_gate = MockGate(False, 0.1)
+    resp = client.post(
+        "/api/v1/predict",
+        headers=VALID_HEADERS,
+        files={"file": ("not-leaf.png", _green_leaf_bytes(), "image/png")},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "not_a_leaf"
+    assert body["leaf_score"] == 0.1
+    assert "disease" not in body
+    assert "treatment" not in body
+    api._leaf_gate = MockGate()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

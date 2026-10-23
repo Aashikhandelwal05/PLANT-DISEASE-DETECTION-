@@ -38,6 +38,7 @@ from torchvision import models, transforms
 # Ensure project root is on the path
 sys.path.insert(0, str(Path(__file__).parent))
 from utils import fix_seeds, get_device, get_logger, SEED
+from app.leaf_gate import NOT_A_LEAF_MESSAGE, LeafGate, get_leaf_gate
 
 logger = get_logger(__name__)
 
@@ -122,6 +123,7 @@ def predict_image(
     classes: list[str],
     device: torch.device,
     top_k: int = 3,
+    leaf_gate: LeafGate | None = None,
 ) -> dict:
     """
     Run inference on a single image.
@@ -142,6 +144,17 @@ def predict_image(
         img = Image.open(image_path).convert("RGB")
     except UnidentifiedImageError:
         raise ValueError(f"Cannot open image file: {image_path}")
+
+    # Run the zero-shot gate before the disease classifier.  A rejected image
+    # intentionally carries no disease class or treatment information.
+    gate = leaf_gate or get_leaf_gate()
+    accepted, leaf_score = gate.accepts(img)
+    if not accepted:
+        return {
+            "status": "not_a_leaf",
+            "message": NOT_A_LEAF_MESSAGE,
+            "leaf_score": leaf_score,
+        }
 
     tensor = TRANSFORM(img).unsqueeze(0).to(device)
 
@@ -181,6 +194,8 @@ def predict_image(
     treatment = _get_treatment(best_class)
 
     return {
+        "status": "ok",
+        "leaf_score": leaf_score,
         "class_name": best_class,
         "crop":       crop,
         "disease":    disease,
@@ -218,6 +233,8 @@ def _get_treatment(class_name: str) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _format_result(result: dict) -> str:
+    if result.get("status") == "not_a_leaf":
+        return f"\n{result['message']}\nLeaf score: {result['leaf_score']:.2%}\n"
     lines = [""]
     conf_pct = result["confidence"] * 100
 

@@ -37,6 +37,15 @@ DUMMY_CLASSES = [
 ]
 
 
+class MockGate:
+    def __init__(self, accepted: bool = True, score: float = 0.99):
+        self.accepted = accepted
+        self.score = score
+
+    def accepts(self, image):
+        return self.accepted, self.score
+
+
 @pytest.fixture(scope="module")
 def dummy_model_and_classes(tmp_path_factory):
     """Build a tiny untrained EfficientNet-B0 and save it to disk."""
@@ -78,27 +87,27 @@ def bad_file(tmp_path: Path) -> Path:
 
 def test_predict_returns_required_keys(dummy_model_and_classes, sample_image):
     model, classes, device, _, _ = dummy_model_and_classes
-    result = predict_image(sample_image, model, classes, device)
+    result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate())
     required = {"class_name", "crop", "disease", "confidence", "top_k", "treatment"}
     assert required.issubset(result.keys()), f"Missing keys: {required - result.keys()}"
 
 
 def test_confidence_is_between_0_and_1(dummy_model_and_classes, sample_image):
     model, classes, device, _, _ = dummy_model_and_classes
-    result = predict_image(sample_image, model, classes, device)
+    result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate())
     assert 0.0 <= result["confidence"] <= 1.0
 
 
 def test_top_k_length(dummy_model_and_classes, sample_image):
     model, classes, device, _, _ = dummy_model_and_classes
-    result = predict_image(sample_image, model, classes, device, top_k=3)
+    result = predict_image(sample_image, model, classes, device, top_k=3, leaf_gate=MockGate())
     assert len(result["top_k"]) == 3
 
 
 def test_top_k_confidences_sum_close_to_1(dummy_model_and_classes, sample_image):
     """Top-k confidences should not individually exceed 1."""
     model, classes, device, _, _ = dummy_model_and_classes
-    result = predict_image(sample_image, model, classes, device, top_k=NUM_CLASSES)
+    result = predict_image(sample_image, model, classes, device, top_k=NUM_CLASSES, leaf_gate=MockGate())
     for entry in result["top_k"]:
         assert 0.0 <= entry["confidence"] <= 1.0
 
@@ -106,11 +115,20 @@ def test_top_k_confidences_sum_close_to_1(dummy_model_and_classes, sample_image)
 def test_non_image_file_raises_value_error(dummy_model_and_classes, bad_file):
     model, classes, device, _, _ = dummy_model_and_classes
     with pytest.raises(ValueError, match="Unsupported file type"):
-        predict_image(bad_file, model, classes, device)
+        predict_image(bad_file, model, classes, device, leaf_gate=MockGate())
 
 
 def test_class_name_in_classes_list(dummy_model_and_classes, sample_image):
     model, classes, device, _, _ = dummy_model_and_classes
-    result = predict_image(sample_image, model, classes, device)
+    result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate())
     assert result["class_name"] in classes
+
+
+def test_below_threshold_returns_no_disease_or_treatment(dummy_model_and_classes, sample_image):
+    model, classes, device, _, _ = dummy_model_and_classes
+    result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate(False, 0.1))
+    assert result["status"] == "not_a_leaf"
+    assert result["leaf_score"] == 0.1
+    assert "disease" not in result
+    assert "treatment" not in result
 
