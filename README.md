@@ -1,292 +1,197 @@
-# Plant Leaf Disease Detection
+# Plant Disease Detection
 
-A transfer-learning system that classifies plant leaf photos into disease categories (or healthy), reports confidence, and shows treatment information. Built with PyTorch and the PlantVillage dataset.
+A PyTorch and FastAPI application for classifying plant-leaf diseases, returning treatment guidance, and rejecting images that do not look like plant leaves before they reach the disease classifier.
 
----
+## Highlights
 
-## What It Does
+- Fine-tuned EfficientNet-B0 disease classifier; MobileNetV3 is also supported for training.
+- Returns crop, disease, confidence, alternative predictions, and treatment guidance.
+- Uses a frozen, zero-shot CLIP ViT-B/32 leaf gate. CLIP is never trained or fine-tuned.
+- Provides a protected FastAPI endpoint and offline unit tests.
 
-- Classifies a leaf photo into one of 38 disease/healthy classes (PlantVillage, all crops) or 10 classes (tomato only).
-- Reports confidence as a percentage; flags low-confidence predictions (< 90%).
-- Shows treatment information: symptoms, organic/chemical options, prevention, and when to see an expert.
-- Provides a REST API (FastAPI) for integration into other tools.
+## Current evaluation
 
----
+The included disease model was evaluated on the held-out PlantVillage test split.
 
-## Model Performance
+| Metric | Result |
+| --- | ---: |
+| Disease-model test accuracy | 96.23% |
+| Disease-model macro F1 | 95.54% |
+| Leaf-gate threshold | 0.9959240556 |
+| Held-out non-leaf images rejected | 75/75 (100.00%) |
+| Held-out real leaves wrongly rejected | 168/3,102 (5.42%) |
 
-| Split | Accuracy | Macro F1 |
-|-------|----------|----------|
-| Validation | — | — |
-| **Test** | **—** | **—** |
+The gate threshold was selected only on validation images (3,095 leaf and 75 non-leaf images), then evaluated on the held-out test splits.
 
-*(Fill in after training and evaluation.)*
+> The non-leaf evaluation data uses the public scikit-learn digits corpus, which is narrow document-like coverage. Add broader real-world negatives before production use.
 
----
+## Requirements
 
-## Setup
+- Python 3.14, or a compatible PyTorch-supported Python version
+- NVIDIA GPU optional; CUDA speeds up disease inference
+- Internet access only for the first CLIP download when it is not cached
 
-### Requirements
-- Python 3.10 or 3.11
-- Windows PowerShell (or any OS terminal)
-- Internet connection for dataset download and initial model weights
-- GPU optional; CPU-only is supported (training will be slow — see note below)
-
-### Install
+## Installation
 
 ```powershell
-# Create virtual environment
+git clone https://github.com/Aashikhandelwal05/PLANT-DISEASE-DETECTION-.git
+cd PLANT-DISEASE-DETECTION-
+
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-> **CPU-only note:** Training on CPU takes several hours. See the [Google Colab Fallback](#google-colab-fallback) section below.
+Before prediction or API use, provide these local artifacts:
 
----
-
-## Dataset Download
-
-You need the **original (non-augmented) PlantVillage colour images**.
-
-### Option A — Kaggle (recommended)
-
-1. Create a free account at https://www.kaggle.com
-2. Go to Account → API → Create New API Token → download `kaggle.json`
-3. Place `kaggle.json` at `C:\Users\<you>\.kaggle\kaggle.json` (Windows)
-4. Run:
-
-```powershell
-python scripts/download_data.py
+```text
+models/best.pt
+models/classes.json
+models/leaf_gate.json
+data/treatments.json
 ```
 
-The script will download and extract the dataset to `data/raw/`.
+`best.pt` and `classes.json` are written by training. `leaf_gate.json` is written by the leaf-gate tuning step below.
 
-### Option B — Manual Download
+## Data preparation and training
 
-Download the dataset from Kaggle:
-https://www.kaggle.com/datasets/abdallahalidev/plantvillage-dataset
-
-Extract the `color/` folder to `data/raw/PlantVillage/`.
-
-> **⚠ Warning:** If you only have the **augmented** version of PlantVillage, the script will warn you. Augmented copies of the same image can land in different splits, which inflates accuracy. Use the `color/` folder only.
-
----
-
-## Prepare Data
+Place the original, non-augmented PlantVillage images in class folders under `data/raw/PlantVillage/`, then create the stratified split:
 
 ```powershell
-# Default: all crops, 70/15/15 split
 python scripts/prepare_data.py
-
-# Tomato only
-python scripts/prepare_data.py --crops tomato
-
-# Custom ratios
-python scripts/prepare_data.py --train 0.7 --val 0.15 --test 0.15
 ```
 
-Outputs:
-- `data/splits.csv` — every image path, class, and split assignment
-- Console: image counts per class per split
-
----
-
-## Training
+Train the default EfficientNet-B0 model:
 
 ```powershell
-# All crops (default, EfficientNet-B0)
 python train.py
+```
 
-# Tomato only
-python train.py --crops tomato
+Useful variants:
 
-# Use MobileNetV3 (faster on slow CPU)
+```powershell
+python train.py --crops tomato potato
 python train.py --model mobilenet
 ```
 
-Outputs saved to `models/`:
-- `best.pt` — best model weights (by validation accuracy)
-- `classes.json` — ordered list of class names
-- `training_curves.png` — loss and accuracy curves
+Training writes `models/best.pt`, `models/classes.json`, and `models/training_curves.png`.
 
----
+## Leaf gate
 
-## Evaluation (Run Once on Test Set)
+The gate runs before disease inference. `leaf_score` is the combined CLIP softmax probability of these prompts:
 
-```powershell
-python evaluate.py
-```
+- "a close-up photo of a plant leaf"
+- "a photo of a tomato leaf"
+- "a photo of a diseased plant leaf"
+- "a photo of a green leaf on a plant"
 
-Outputs saved to `reports/`:
-- `test_report.txt` — accuracy, macro F1, per-class metrics
-- `confusion_matrix.png`
-- `confidence_table.txt`
-- PASS or FAIL for the 90% accuracy target
+It contrasts them with person, animal, building, vehicle, food, flower, document, landscape, and everyday-object prompts.
 
-> **Important:** Run this only once, after training is complete. The test set must never be used to tune anything.
-
----
-
-## Prediction
-
-### Leaf gate
-
-Before disease classification, the application runs a frozen zero-shot CLIP
-ViT-B/32 gate. It sums CLIP's softmax probabilities for leaf prompts and rejects
-images below the validation-tuned threshold saved in `models/leaf_gate.json`.
-CLIP is never trained or fine-tuned.
-
-Prepare the non-leaf manifest once (the command removes corrupt and duplicate
-images before assigning a deterministic 70/15/15 split):
+Prepare the non-leaf corpus, remove corrupt and duplicate files, split it 70/15/15, then tune only on validation data:
 
 ```powershell
 python scripts/prepare_negatives.py --use-sklearn-digits --limit 500
 python scripts/tune_leaf_gate.py
 ```
 
-The threshold is tuned only on the validation splits. Run this held-out test
-command once after tuning:
+This creates `models/leaf_gate.json`. Only after tuning, evaluate held-out data:
 
 ```powershell
 python scripts/evaluate_leaf_gate.py
 python evaluate.py
 ```
 
-| Measurement | Before gate | After gate |
-| --- | ---: | ---: |
-| Non-leaf images accepted by the disease-model 90% confidence rule | 0/100 (0.0%) | n/a — CLIP rejects before disease inference |
-| Held-out non-leaf images rejected by the gate | n/a | 75/75 (100.0%) |
-| Held-out real leaf images wrongly rejected by the gate | n/a | 168/3,102 (5.42%) |
-| Disease-model held-out accuracy | 96.23% (unchanged model) | 96.23% |
-
-The baseline used 100 non-leaf training images only; the after-gate measurements
-use the held-out non-leaf and leaf test splits. The supplied `leaf_gate.json`
-was tuned at a threshold of `0.9959240556` using validation images only.
+## Command-line prediction
 
 ```powershell
-python predict.py path/to/leaf.jpg
+python predict.py path\to\leaf.jpg
 ```
 
-Example output:
-```
-Crop:      Tomato
-Disease:   Early Blight
-Confidence: 94.3%
+A successful result includes the predicted class, crop, disease, confidence, alternatives, treatment advice, and leaf score. Rejected images return:
 
-Top 3 guesses:
-  1. Tomato__Early_blight       94.3%
-  2. Tomato__Late_blight         3.1%
-  3. Tomato__healthy             1.4%
-
-Treatment:
-  Symptoms: Dark concentric rings on lower/older leaves...
-  Organic:  Remove infected leaves; apply copper-based fungicide...
-  Chemical: Chlorothalonil or mancozeb (follow product label)...
-  Prevention: Crop rotation, avoid overhead watering...
-  See an expert if: Disease spreads rapidly or affects >30% of the plant.
-```
-
-If confidence is below 90%:
-```
-
-If the leaf gate rejects the upload, the response has `status: "not_a_leaf"`
-and contains no disease classification or treatment:
-
-```
+```text
 This does not look like a plant leaf. Please upload a clear photo of a single leaf in good light.
 ```
-Not sure (confidence 62.1%). Please retake a clear photo of a single leaf in good light.
-```
 
----
+Rejected images receive no disease prediction or treatment recommendation.
 
 ## API
 
+Create a local `.env` file:
+
+```text
+API_KEY=replace-with-a-long-random-secret
+```
+
 Start the server:
-```powershell
-# Create .env with your API key
-echo "API_KEY=change-me-before-use" > .env
-
-uvicorn api:app --host 0.0.0.0 --port 8000
-```
-
-Endpoints:
-- `POST /api/v1/predict` — Upload an image, get disease prediction + treatment
-- `GET /health` — Health check
-- `GET /docs` — Swagger UI
-
-Example request:
-```powershell
-curl -X POST "http://localhost:8000/api/v1/predict" `
-  -H "X-API-Key: change-me-before-use" `
-  -F "file=@leaf.jpg"
-```
-
----
-
-## Running Tests
 
 ```powershell
-pytest tests/ -v
+uvicorn api:app --reload
 ```
 
-Tests run offline without the real dataset or a trained model.
+Open interactive API documentation at `http://127.0.0.1:8000/docs`.
 
----
+### Health check
 
-## Google Colab Fallback
-
-If training on CPU is too slow (estimate: 8–15 hours for all crops):
-
-1. Upload your project to Google Drive or clone from GitHub.
-2. Open a new Colab notebook with a **GPU runtime** (Runtime → Change runtime type → T4 GPU).
-3. Mount Drive and run:
-
-```python
-!pip install -r requirements.txt
-!python scripts/download_data.py   # needs kaggle.json in /root/.kaggle/
-!python scripts/prepare_data.py
-!python train.py
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-4. Download `models/best.pt` and `models/classes.json` back to your machine.
+Expected response:
 
----
-
-## Project Structure
-
-```
-plant-disease/
-├── data/                  # ← not committed (large)
-│   ├── raw/               # downloaded dataset
-│   ├── splits.csv         # train/val/test assignments
-│   └── treatments.json    # treatment info per class
-├── models/                # ← not committed (large)
-│   ├── best.pt
-│   └── classes.json
-├── reports/               # evaluation outputs
-├── scripts/
-│   ├── download_data.py
-│   └── prepare_data.py
-├── tests/
-├── train.py
-├── evaluate.py
-├── predict.py
-├── api.py
-├── requirements.txt
-├── README.md
-└── development.md
+```json
+{"status":"ok","model_ready":true,"num_classes":15}
 ```
 
----
+### Prediction request
 
-## Limitations
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/api/v1/predict" `
+  -H "X-API-Key: replace-with-a-long-random-secret" `
+  -F "file=@path\to\leaf.jpg"
+```
 
-- **Controlled photos:** The PlantVillage dataset consists of photos taken against plain backgrounds in controlled conditions. Accuracy on real field photos (cluttered background, variable lighting, multiple leaves) will likely be **lower** than reported numbers.
-- **Leaf gate scope:** The gate checks whether the image appears to be a leaf, not which crop it is. Unusual images can still pass, and genuine leaves can be rejected.
-- **Crop scope:** Only covers crops present in PlantVillage. It will not recognise diseases of crops it was not trained on.
-- **Treatment guidance:** Treatment information is general. Always follow product labels and local agricultural advice. Consult an agricultural expert before applying any treatment.
-- **Not a substitute for expert diagnosis:** This tool is a screening aid, not a certified diagnostic system.
+Successful responses have `"status": "ok"`. A non-leaf response has no disease or treatment fields:
+
+```json
+{
+  "status": "not_a_leaf",
+  "message": "This does not look like a plant leaf. Please upload a clear photo of a single leaf in good light.",
+  "leaf_score": 0.12
+}
+```
+
+## Tests
+
+Tests mock the leaf gate, so they do not download CLIP or require model weights.
+
+```powershell
+pytest -q -o addopts= --basetemp "$env:TEMP\plant-disease-pytest"
+```
+
+## Project layout
+
+```text
+app/                         Zero-shot CLIP gate
+data/                        Dataset manifests and local source data
+models/                      Local model artifacts (untracked)
+reports/                     Local evaluation artifacts (untracked)
+scripts/                     Data preparation and evaluation commands
+tests/                       Offline tests
+api.py                       FastAPI service
+predict.py                   Command-line inference
+train.py                     Disease-model training
+evaluate.py                  Disease-model held-out evaluation
+```
+
+## Limitations and safety
+
+- PlantVillage contains controlled images; real field photos may perform worse.
+- The leaf gate checks whether an image appears to be a leaf, not which crop it belongs to.
+- Unusual non-leaf images may pass the gate, and genuine leaf images may be rejected.
+- The classifier only supports diseases represented by its trained PlantVillage classes.
+- Treatment information is general guidance, not a substitute for local agricultural advice or product-label instructions.
+
+## License
+
+Add a license file before distributing or accepting external contributions.
