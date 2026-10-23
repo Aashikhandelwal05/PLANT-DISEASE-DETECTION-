@@ -13,7 +13,6 @@ from pathlib import Path
 import torch
 from PIL import Image
 
-from utils import get_device
 
 MODEL_NAME = "openai/clip-vit-base-patch32"
 CONFIG_PATH = Path("models/leaf_gate.json")
@@ -57,9 +56,24 @@ class LeafGate:
         try:
             from transformers import CLIPModel, CLIPProcessor
 
-            self._processor = CLIPProcessor.from_pretrained(self.model_name)
-            self._model = CLIPModel.from_pretrained(self.model_name)
-            self.device = self.device or get_device()
+            # Prefer already-cached assets so an API restart does not make an
+            # avoidable network request.  If absent, allow the first startup
+            # to download the official pretrained files and surface its exact
+            # error if that cannot succeed.
+            try:
+                self._processor = CLIPProcessor.from_pretrained(
+                    self.model_name, local_files_only=True
+                )
+                self._model = CLIPModel.from_pretrained(
+                    self.model_name, local_files_only=True
+                )
+            except Exception:
+                self._processor = CLIPProcessor.from_pretrained(self.model_name)
+                self._model = CLIPModel.from_pretrained(self.model_name)
+            # Keep CLIP off a small inference GPU by default.  The disease
+            # classifier gets priority on CUDA, while the gate runs once per
+            # request on CPU and avoids a startup VRAM collision.
+            self.device = self.device or torch.device("cpu")
             self._model = self._model.to(self.device).eval()
         except Exception as exc:  # surface the exact download/load failure
             raise RuntimeError(

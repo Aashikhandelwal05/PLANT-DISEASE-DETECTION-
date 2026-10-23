@@ -106,7 +106,15 @@ def load_model(
         state = torch.load(model_path, map_location="cpu")
         model.load_state_dict(state)
 
-    model = model.to(device).eval()
+    try:
+        model = model.to(device).eval()
+    except torch.AcceleratorError as exc:
+        if device.type != "cuda" or "out of memory" not in str(exc).lower():
+            raise
+        logger.warning("CUDA memory is unavailable; falling back to CPU: %s", exc)
+        torch.cuda.empty_cache()
+        device = torch.device("cpu")
+        model = model.to(device).eval()
     _model_cache["model"] = model
     _model_cache["classes"] = classes
     _model_cache["device"] = device
