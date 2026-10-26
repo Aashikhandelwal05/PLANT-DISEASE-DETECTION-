@@ -34,3 +34,8 @@
 
 - Custom CNN checkpoints now record the classes used for training.
 - The full-project evaluator rejects a crop-subset checkpoint before producing a misleading all-class test score.
+
+## 2026-10-26 — Tomato-only evaluation mode
+
+- Added explicit `--crops tomato` support to the custom-CNN evaluator.
+- Tomato-only reports have distinct filenames and scope labels to prevent mixing them with 15-class metrics.

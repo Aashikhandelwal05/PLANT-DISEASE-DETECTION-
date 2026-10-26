@@ -39,7 +39,9 @@ def main() -> None:
     argparse.ArgumentParser(description="Create reports/comparison.md after both test evaluations.").parse_args()
     reports = Path("reports")
     classes = json.loads(Path("models/classes.json").read_text(encoding="utf-8"))
-    custom_metrics = json.loads((reports / "custom_cnn_metrics.json").read_text(encoding="utf-8"))
+    custom_metrics = json.loads((reports / "custom_cnn_all_classes_metrics.json").read_text(encoding="utf-8"))
+    if custom_metrics.get("scope") != "all_classes":
+        raise ValueError("reports/custom_cnn_all_classes_metrics.json must contain a full 15-class evaluation.")
     training = json.loads(Path("models/custom_cnn_training.json").read_text(encoding="utf-8"))
     pretrained_accuracy, pretrained_f1 = _metrics_from_pretrained_report(reports / "test_report.txt")
     pretrained = models.efficientnet_b0(weights=None)

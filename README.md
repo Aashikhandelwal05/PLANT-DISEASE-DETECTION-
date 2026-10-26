@@ -92,6 +92,14 @@ python scripts/train_custom_cnn.py --crops tomato
 
 This produces a tomato-only checkpoint for experimentation; do not use it with the full 15-class `evaluate_custom_cnn.py` comparison. Train without `--crops` for the project-wide test and comparison report.
 
+Evaluate a tomato-only checkpoint only on tomato test images:
+
+```powershell
+python scripts/evaluate_custom_cnn.py --crops tomato
+```
+
+This writes reports with a `custom_cnn_tomato_` prefix. They are tomato-only metrics and must not be compared directly with the 15-class pretrained report.
+
 This writes `models/custom_cnn.pt`, `models/custom_cnn_training_curves.png`, and `models/custom_cnn_training.json`.
 
 ### Google Colab fallback
