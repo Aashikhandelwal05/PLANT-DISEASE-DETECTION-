@@ -30,6 +30,7 @@ SPLITS_PATH = Path("data/splits.csv")
 CLASSES_PATH = Path("models/classes.json")
 MODEL_PATH = Path("models/custom_cnn.pt")
 CURVES_PATH = Path("models/custom_cnn_training_curves.png")
+TRAINING_METADATA_PATH = Path("models/custom_cnn_training.json")
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
 
@@ -118,6 +119,7 @@ def main() -> None:
     args = parser.parse_args()
 
     fix_seeds(SEED)
+    training_started = time.perf_counter()
     if not SPLITS_PATH.exists() or not CLASSES_PATH.exists():
         raise FileNotFoundError("Expected data/splits.csv and models/classes.json before training.")
     classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8"))
@@ -183,6 +185,13 @@ def main() -> None:
                 print(f"Early stopping after {epoch} epochs; best validation accuracy {best_accuracy:.4f}.")
                 break
     save_curves(history, CURVES_PATH)
+    TRAINING_METADATA_PATH.write_text(json.dumps({
+        "best_validation_accuracy": best_accuracy,
+        "epochs_completed": len(history["train_loss"]),
+        "training_seconds": time.perf_counter() - training_started,
+        "input_size": args.input_size,
+        "classes": classes,
+    }, indent=2) + "\n", encoding="utf-8")
     print(f"Saved best validation checkpoint to {MODEL_PATH}; best validation accuracy {best_accuracy:.4f}.")
 
 
