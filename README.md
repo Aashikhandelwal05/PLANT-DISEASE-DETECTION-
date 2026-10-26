@@ -217,6 +217,18 @@ Successful responses have `"status": "ok"`. A non-leaf response has no disease o
 }
 ```
 
+### Custom CNN prediction endpoint
+
+`POST /api/v1/predict/custom` always uses `models/custom_cnn.pt`, independently of `MODEL_BACKEND`. It still runs the same CLIP leaf gate first, so a non-leaf returns the same `not_a_leaf` response and never reaches the Custom CNN.
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8000/api/v1/predict/custom" `
+  -H "X-API-Key: replace-with-a-long-random-secret" `
+  -F "file=@path\to\leaf.jpg"
+```
+
+Train the Custom CNN first. If its checkpoint is unavailable, this endpoint returns HTTP 503 with an instruction to run the training script.
+
 ## Tests
 
 Tests mock the leaf gate, so they do not download CLIP or require model weights.

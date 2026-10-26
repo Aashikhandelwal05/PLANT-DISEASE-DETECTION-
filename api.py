@@ -72,6 +72,9 @@ ACCEPTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"
 _model = None
 _classes: list[str] = []
 _device = None
+_custom_model = None
+_custom_classes: list[str] = []
+_custom_device = None
 _leaf_gate: LeafGate | None = None
 
 
@@ -232,6 +235,106 @@ async def predict(
                     "confidence": round(e["confidence"], 4),
                 }
                 for e in result["top_k"]
+            ],
+            "treatment": result["treatment"],
+        }
+    )
+
+
+def _get_custom_backend():
+    """Load the CustomCNN once, without changing the configured default backend."""
+    global _custom_model, _custom_classes, _custom_device
+    if _custom_model is None:
+        try:
+            _custom_model, _custom_classes, _custom_device = load_model(backend="custom")
+            logger.info("Custom CNN loaded. Classes: %d", len(_custom_classes))
+        except (FileNotFoundError, ValueError) as exc:
+            logger.error("Custom CNN is unavailable: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail="Custom CNN not loaded. Run scripts/train_custom_cnn.py first.",
+            ) from exc
+    return _custom_model, _custom_classes, _custom_device
+
+
+@app.post(
+    "/api/v1/predict/custom",
+    tags=["Prediction"],
+    summary="Predict plant disease with the from-scratch Custom CNN",
+    response_description="Prediction result with treatment advice.",
+    dependencies=[Depends(_verify_api_key)],
+)
+async def predict_custom(
+    file: UploadFile = File(..., description="Leaf image (JPEG, PNG, BMP, TIFF, WebP)"),
+) -> JSONResponse:
+    """Run the Custom CNN behind the same CLIP leaf gate as the default endpoint."""
+    model, classes, device = _get_custom_backend()
+
+    content_type = (file.content_type or "").lower()
+    file_ext = Path(file.filename or "").suffix.lower()
+    if content_type not in ACCEPTED_CONTENT_TYPES and file_ext not in ACCEPTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"Unsupported media type: '{content_type}'. "
+                "Upload a JPEG, PNG, BMP, TIFF, or WebP image."
+            ),
+        )
+
+    raw = await file.read()
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+    except UnidentifiedImageError:
+        raise HTTPException(
+            status_code=415,
+            detail="File could not be read as an image. Please upload a valid image.",
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to process uploaded file.")
+
+    tmp = io.BytesIO()
+    img.save(tmp, format="PNG")
+    tmp.seek(0)
+    tmp_path: Path | None = None
+    try:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+            tf.write(tmp.read())
+            tmp_path = Path(tf.name)
+        result = predict_image(
+            tmp_path, model, classes, device, top_k=3, leaf_gate=_leaf_gate
+        )
+    except Exception as exc:
+        logger.error("Custom CNN inference failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Inference failed.")
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+    if result.get("status") == "not_a_leaf":
+        return JSONResponse(
+            content={
+                "status": "not_a_leaf",
+                "message": result["message"],
+                "leaf_score": round(result["leaf_score"], 4),
+            }
+        )
+
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "leaf_score": round(result["leaf_score"], 4),
+            "crop": result["crop"],
+            "disease": result["disease"],
+            "class_name": result["class_name"],
+            "confidence": round(result["confidence"], 4),
+            "top_3": [
+                {
+                    "class_name": entry["class_name"],
+                    "confidence": round(entry["confidence"], 4),
+                }
+                for entry in result["top_k"]
             ],
             "treatment": result["treatment"],
         }

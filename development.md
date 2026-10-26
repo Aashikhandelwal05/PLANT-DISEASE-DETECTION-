@@ -39,3 +39,9 @@
 
 - Added explicit `--crops tomato` support to the custom-CNN evaluator.
 - Tomato-only reports have distinct filenames and scope labels to prevent mixing them with 15-class metrics.
+
+## 2026-10-26 - Dedicated Custom CNN API endpoint
+
+- Added authenticated `POST /api/v1/predict/custom`, which lazily loads `models/custom_cnn.pt` without changing the configured default backend.
+- The endpoint runs the existing CLIP leaf gate first and returns the same `not_a_leaf` response without disease or treatment when rejected.
+- Added offline API tests for Custom CNN gate rejection and the normal response schema.

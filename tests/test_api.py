@@ -68,12 +68,18 @@ def _patch_api_state():
     api._model   = dummy
     api._classes = DUMMY_CLASSES
     api._device  = torch.device("cpu")
+    api._custom_model = dummy
+    api._custom_classes = DUMMY_CLASSES
+    api._custom_device = torch.device("cpu")
     api._API_KEY = "test-secret-key"
     api._leaf_gate = MockGate()
     yield
     # Restore
     api._model   = None
     api._classes = []
+    api._custom_model = None
+    api._custom_classes = []
+    api._custom_device = None
     api._API_KEY = ""
     api._leaf_gate = None
 
@@ -136,6 +142,39 @@ def test_not_a_leaf_has_no_disease_or_treatment(client):
     assert "disease" not in body
     assert "treatment" not in body
     api._leaf_gate = MockGate()
+
+
+def test_custom_endpoint_rejects_non_leaf_before_disease_inference(client):
+    """The custom route must use the gate and must not need the default model."""
+    import api
+    api._model = None
+    api._leaf_gate = MockGate(False, 0.1)
+    resp = client.post(
+        "/api/v1/predict/custom",
+        headers=VALID_HEADERS,
+        files={"file": ("not-leaf.png", _green_leaf_bytes(), "image/png")},
+    )
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["status"] == "not_a_leaf"
+    assert body["leaf_score"] == 0.1
+    assert "disease" not in body
+    assert "treatment" not in body
+    api._model = api._custom_model
+    api._leaf_gate = MockGate()
+
+
+def test_custom_endpoint_has_the_standard_success_response(client):
+    resp = client.post(
+        "/api/v1/predict/custom",
+        headers=VALID_HEADERS,
+        files={"file": ("leaf.png", _green_leaf_bytes(), "image/png")},
+    )
+    body = resp.json()
+    required = {"status", "leaf_score", "crop", "disease", "class_name", "confidence", "top_3", "treatment"}
+    assert resp.status_code == 200
+    assert body["status"] == "ok"
+    assert required.issubset(body.keys())
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -207,4 +246,3 @@ def test_top3_has_three_entries(client):
     )
     body = resp.json()
     assert len(body["top_3"]) == 3
-
