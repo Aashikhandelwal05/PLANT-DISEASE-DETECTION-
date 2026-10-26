@@ -15,3 +15,8 @@
 
 - Added `scripts/evaluate_custom_cnn.py`, which reports held-out accuracy, macro F1, per-class metrics, confusion matrix, confidence-threshold table, and the 90% PASS/FAIL result.
 - The script is ready to run after custom-CNN training; no new test result was generated during this code-only update.
+
+## 2026-10-26 — Step 4: comparison implementation
+
+- Added `scripts/compare_models.py`, which combines the existing pretrained test report and custom-CNN test metrics into `reports/comparison.md`.
+- CPU inference timings use synthetic tensors, so they do not consume the held-out test split again.
