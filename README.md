@@ -90,7 +90,7 @@ For a quicker tomato-only experiment:
 python scripts/train_custom_cnn.py --crops tomato
 ```
 
-This produces a tomato-only checkpoint for experimentation; do not use it with the full 15-class `evaluate_custom_cnn.py` comparison. Train without `--crops` for the project-wide test and comparison report.
+This produces a tomato-only checkpoint for experimentation. Train without `--crops` to evaluate all 15 project classes.
 
 Evaluate a tomato-only checkpoint only on tomato test images:
 
@@ -98,7 +98,7 @@ Evaluate a tomato-only checkpoint only on tomato test images:
 python scripts/evaluate_custom_cnn.py --crops tomato
 ```
 
-This writes reports with a `custom_cnn_tomato_` prefix. They are tomato-only metrics and must not be compared directly with the 15-class pretrained report.
+This writes reports with a `custom_cnn_tomato_` prefix. They describe only the tomato classes.
 
 This writes `models/custom_cnn.pt`, `models/custom_cnn_training_curves.png`, and `models/custom_cnn_training.json`.
 
@@ -139,14 +139,13 @@ python scripts/evaluate_leaf_gate.py
 python evaluate.py
 ```
 
-After training the custom CNN, use the held-out split once for it and create the comparison report:
+After training the custom CNN, use the held-out split once for it:
 
 ```powershell
 python scripts/evaluate_custom_cnn.py
-python scripts/compare_models.py
 ```
 
-The custom-CNN evaluator writes `reports/custom_cnn_test_report.txt`, `reports/custom_cnn_confusion_matrix.png`, `reports/custom_cnn_confidence_table.csv`, and `reports/custom_cnn_metrics.json`. The comparison is saved to `reports/comparison.md`.
+The custom-CNN evaluator writes `reports/custom_cnn_test_report.txt`, `reports/custom_cnn_confusion_matrix.png`, `reports/custom_cnn_confidence_table.csv`, and `reports/custom_cnn_metrics.json`.
 
 ## Command-line prediction
 

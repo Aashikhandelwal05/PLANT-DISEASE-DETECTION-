@@ -59,7 +59,7 @@ def main() -> None:
             "This checkpoint was trained on a subset of classes and cannot be "
             "evaluated against the full 15-class test split. Missing classes: "
             f"{', '.join(missing)}. Train without --crops for the project-wide "
-            "comparison, or create a matching subset evaluator."
+            "evaluation, or create a matching subset evaluator."
         )
     if args.crops and trained_classes != selected_classes:
         raise ValueError("--crops does not match the classes recorded in this checkpoint.")
