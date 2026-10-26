@@ -17,10 +17,11 @@ import pytest
 import torch
 from PIL import Image
 from torchvision import models
+from custom_cnn import CustomCNN
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import predict as pred_module
-from predict import predict_image
+from predict import _model_cache, load_model, predict_image
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -132,3 +133,15 @@ def test_below_threshold_returns_no_disease_or_treatment(dummy_model_and_classes
     assert "disease" not in result
     assert "treatment" not in result
 
+
+def test_custom_backend_loads_and_predicts(tmp_path, sample_image):
+    classes_path = tmp_path / "classes.json"
+    classes_path.write_text(json.dumps(DUMMY_CLASSES), encoding="utf-8")
+    checkpoint_path = tmp_path / "custom_cnn.pt"
+    custom = CustomCNN(NUM_CLASSES, input_size=128)
+    torch.save({"state_dict": custom.state_dict(), "input_size": 128, "classes": DUMMY_CLASSES}, checkpoint_path)
+    _model_cache.clear()
+    model, classes, device = load_model(checkpoint_path, classes_path, torch.device("cpu"), backend="custom")
+    result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate())
+    assert result["status"] == "ok"
+    assert result["class_name"] in DUMMY_CLASSES

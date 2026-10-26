@@ -20,3 +20,7 @@
 
 - Added `scripts/compare_models.py`, which combines the existing pretrained test report and custom-CNN test metrics into `reports/comparison.md`.
 - CPU inference timings use synthetic tensors, so they do not consume the held-out test split again.
+
+## 2026-10-26 — Step 5: optional field-photo check
+
+- Added `scripts/check_field_photos.py`; it explicitly skips when `data/field_test/` is absent or empty and otherwise reports both backends without creating images.

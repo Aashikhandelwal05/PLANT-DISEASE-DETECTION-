@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from torchvision import models, transforms
 sys.path.insert(0, str(Path(__file__).parent))
 from utils import fix_seeds, get_device, get_logger, SEED
 from app.leaf_gate import NOT_A_LEAF_MESSAGE, LeafGate, get_leaf_gate
+from custom_cnn import CustomCNN
 
 logger = get_logger(__name__)
 
@@ -47,6 +49,7 @@ logger = get_logger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 MODELS_DIR      = Path("models")
 BEST_MODEL_PATH = MODELS_DIR / "best.pt"
+CUSTOM_MODEL_PATH = MODELS_DIR / "custom_cnn.pt"
 CLASSES_JSON    = MODELS_DIR / "classes.json"
 TREATMENTS_JSON = Path("data/treatments.json")
 
@@ -71,14 +74,25 @@ TRANSFORM = transforms.Compose([
 _model_cache: dict = {}
 
 
+def get_model_backend(value: str | None = None) -> str:
+    """Resolve and validate the configured inference backend."""
+    backend = (value or os.getenv("MODEL_BACKEND", "pretrained")).lower()
+    if backend not in {"pretrained", "custom"}:
+        raise ValueError("MODEL_BACKEND must be 'pretrained' or 'custom'.")
+    return backend
+
+
 def load_model(
     model_path: Path = BEST_MODEL_PATH,
     classes_path: Path = CLASSES_JSON,
     device: torch.device | None = None,
+    backend: str | None = None,
 ):
     """Load model and class list, returning (model, classes, device)."""
-    if "model" in _model_cache:
-        return _model_cache["model"], _model_cache["classes"], _model_cache["device"]
+    resolved_backend = get_model_backend(backend)
+    cache_key = (resolved_backend, str(model_path), str(classes_path), str(device))
+    if cache_key in _model_cache:
+        return _model_cache[cache_key]
 
     if device is None:
         device = get_device()
@@ -92,19 +106,33 @@ def load_model(
 
     num_classes = len(classes)
 
-    # Try EfficientNet-B0 first, fall back to MobileNetV3
-    try:
-        model = models.efficientnet_b0(weights=None)
-        in_features = model.classifier[1].in_features
-        model.classifier[1] = torch.nn.Linear(in_features, num_classes)
-        state = torch.load(model_path, map_location="cpu")
-        model.load_state_dict(state)
-    except RuntimeError:
-        model = models.mobilenet_v3_large(weights=None)
-        in_features = model.classifier[3].in_features
-        model.classifier[3] = torch.nn.Linear(in_features, num_classes)
-        state = torch.load(model_path, map_location="cpu")
-        model.load_state_dict(state)
+    if resolved_backend == "custom":
+        model_path = CUSTOM_MODEL_PATH if model_path == BEST_MODEL_PATH else model_path
+        if not model_path.exists():
+            raise FileNotFoundError(f"Custom CNN checkpoint not found at {model_path}. Run scripts/train_custom_cnn.py first.")
+        checkpoint = torch.load(model_path, map_location="cpu")
+        if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+            raise ValueError("Invalid custom CNN checkpoint: expected a checkpoint with state_dict.")
+        if checkpoint.get("classes") and checkpoint["classes"] != classes:
+            raise ValueError("Custom CNN class order does not match models/classes.json.")
+        model = CustomCNN(num_classes, input_size=int(checkpoint.get("input_size", 128)))
+        model.load_state_dict(checkpoint["state_dict"])
+        model.input_size = int(checkpoint.get("input_size", 128))
+    else:
+        # Try EfficientNet-B0 first, fall back to MobileNetV3.
+        try:
+            model = models.efficientnet_b0(weights=None)
+            in_features = model.classifier[1].in_features
+            model.classifier[1] = torch.nn.Linear(in_features, num_classes)
+            state = torch.load(model_path, map_location="cpu")
+            model.load_state_dict(state)
+        except RuntimeError:
+            model = models.mobilenet_v3_large(weights=None)
+            in_features = model.classifier[3].in_features
+            model.classifier[3] = torch.nn.Linear(in_features, num_classes)
+            state = torch.load(model_path, map_location="cpu")
+            model.load_state_dict(state)
+        model.input_size = IMG_SIZE
 
     try:
         model = model.to(device).eval()
@@ -115,10 +143,9 @@ def load_model(
         torch.cuda.empty_cache()
         device = torch.device("cpu")
         model = model.to(device).eval()
-    _model_cache["model"] = model
-    _model_cache["classes"] = classes
-    _model_cache["device"] = device
-    return model, classes, device
+    result = (model, classes, device)
+    _model_cache[cache_key] = result
+    return result
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -164,7 +191,14 @@ def predict_image(
             "leaf_score": leaf_score,
         }
 
-    tensor = TRANSFORM(img).unsqueeze(0).to(device)
+    input_size = int(getattr(model, "input_size", IMG_SIZE))
+    transform = TRANSFORM if input_size == IMG_SIZE else transforms.Compose([
+        transforms.Resize(int(input_size * 1.15)),
+        transforms.CenterCrop(input_size),
+        transforms.ToTensor(),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+    ])
+    tensor = transform(img).unsqueeze(0).to(device)
 
     with torch.no_grad():
         logits = model(tensor)
@@ -286,6 +320,7 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=3,
                         help="Number of top guesses to show (default: 3).")
     parser.add_argument("--model", type=Path, default=BEST_MODEL_PATH)
+    parser.add_argument("--backend", choices=("pretrained", "custom"), default=None)
     args = parser.parse_args()
 
     fix_seeds(SEED)
@@ -304,7 +339,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        model, classes, device = load_model(args.model)
+        model, classes, device = load_model(args.model, backend=args.backend)
         result = predict_image(args.image, model, classes, device, top_k=args.top)
         output = _format_result(result)
         try:
