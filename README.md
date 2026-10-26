@@ -186,6 +186,8 @@ Set `MODEL_BACKEND=pretrained` (default) or `MODEL_BACKEND=custom` in `.env` bef
 
 Open interactive API documentation at `http://127.0.0.1:8000/docs`.
 
+In Swagger, click **Authorize** once and enter your `X-API-Key`. Swagger then includes it automatically in every protected prediction request.
+
 ### Health check
 
 ```powershell

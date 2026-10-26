@@ -104,6 +104,15 @@ def test_health_returns_ok(client):
     assert body["model_ready"] is True
 
 
+def test_openapi_registers_api_key_authorization_once(client):
+    schema = client.get("/openapi.json").json()
+    security_schemes = schema["components"]["securitySchemes"]
+    assert security_schemes["APIKeyHeader"]["type"] == "apiKey"
+    assert security_schemes["APIKeyHeader"]["name"] == "X-API-Key"
+    assert schema["paths"]["/api/v1/predict"]["post"]["security"] == [{"APIKeyHeader": []}]
+    assert schema["paths"]["/api/v1/predict/custom"]["post"]["security"] == [{"APIKeyHeader": []}]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Authentication
 # ──────────────────────────────────────────────────────────────────────────────

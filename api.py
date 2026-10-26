@@ -34,8 +34,9 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Security, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from PIL import Image, UnidentifiedImageError
 
 # Ensure project root is on path
@@ -76,6 +77,7 @@ _custom_model = None
 _custom_classes: list[str] = []
 _custom_device = None
 _leaf_gate: LeafGate | None = None
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 @app.on_event("startup")
@@ -104,7 +106,7 @@ if not _API_KEY:
     )
 
 
-def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
+def _verify_api_key(x_api_key: str | None = Security(_api_key_header)) -> None:
     """Dependency that checks the X-API-Key header."""
     if not _API_KEY:
         # Key not configured → lock everything, never allow through
