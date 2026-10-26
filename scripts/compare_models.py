@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import re
 import sys
 import time
@@ -35,6 +36,7 @@ def _cpu_time(model: torch.nn.Module, input_size: int, iterations: int = 30) -> 
 
 
 def main() -> None:
+    argparse.ArgumentParser(description="Create reports/comparison.md after both test evaluations.").parse_args()
     reports = Path("reports")
     classes = json.loads(Path("models/classes.json").read_text(encoding="utf-8"))
     custom_metrics = json.loads((reports / "custom_cnn_metrics.json").read_text(encoding="utf-8"))

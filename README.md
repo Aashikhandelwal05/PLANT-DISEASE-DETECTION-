@@ -76,6 +76,34 @@ python train.py --model mobilenet
 
 Training writes `models/best.pt`, `models/classes.json`, and `models/training_curves.png`.
 
+### Train the custom CNN from scratch
+
+The custom CNN has no pretrained weights. It uses the same existing `data/splits.csv` class order as the pretrained model, train-only augmentation, AdamW, cosine scheduling, label smoothing, weighted sampling, and validation-only checkpoint selection.
+
+```powershell
+python scripts/train_custom_cnn.py
+```
+
+For a quicker tomato-only experiment:
+
+```powershell
+python scripts/train_custom_cnn.py --crops tomato
+```
+
+This writes `models/custom_cnn.pt`, `models/custom_cnn_training_curves.png`, and `models/custom_cnn_training.json`.
+
+### Google Colab fallback
+
+If local training is too slow, open a Colab notebook with a GPU runtime, upload or clone this project and its PlantVillage data, then run:
+
+```python
+!pip install -r requirements.txt
+!python scripts/train_custom_cnn.py
+!python scripts/evaluate_custom_cnn.py
+```
+
+Copy the resulting `models/custom_cnn.pt` and `models/custom_cnn_training.json` back to your local `models/` directory.
+
 ## Leaf gate
 
 The gate runs before disease inference. `leaf_score` is the combined CLIP softmax probability of these prompts:
@@ -101,10 +129,26 @@ python scripts/evaluate_leaf_gate.py
 python evaluate.py
 ```
 
+After training the custom CNN, use the held-out split once for it and create the comparison report:
+
+```powershell
+python scripts/evaluate_custom_cnn.py
+python scripts/compare_models.py
+```
+
+The custom-CNN evaluator writes `reports/custom_cnn_test_report.txt`, `reports/custom_cnn_confusion_matrix.png`, `reports/custom_cnn_confidence_table.csv`, and `reports/custom_cnn_metrics.json`. The comparison is saved to `reports/comparison.md`.
+
 ## Command-line prediction
 
 ```powershell
 python predict.py path\to\leaf.jpg
+```
+
+Switch backend for one command, or set `MODEL_BACKEND=custom` in `.env`:
+
+```powershell
+python predict.py path\to\leaf.jpg --backend custom
+python predict.py path\to\leaf.jpg --backend pretrained
 ```
 
 A successful result includes the predicted class, crop, disease, confidence, alternatives, treatment advice, and leaf score. Rejected images return:
@@ -128,6 +172,8 @@ Start the server:
 ```powershell
 uvicorn api:app --reload
 ```
+
+Set `MODEL_BACKEND=pretrained` (default) or `MODEL_BACKEND=custom` in `.env` before starting the API. Both backends keep the same leaf gate, treatment mapping, confidence behaviour, and response JSON shape.
 
 Open interactive API documentation at `http://127.0.0.1:8000/docs`.
 

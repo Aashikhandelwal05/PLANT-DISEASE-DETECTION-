@@ -24,3 +24,8 @@
 ## 2026-10-26 — Step 5: optional field-photo check
 
 - Added `scripts/check_field_photos.py`; it explicitly skips when `data/field_test/` is absent or empty and otherwise reports both backends without creating images.
+
+## 2026-10-26 — Steps 6–7: backend integration and documentation
+
+- Added `MODEL_BACKEND` support (`pretrained` by default; `custom` after a custom checkpoint is trained) without changing the leaf gate, treatment data, or API response shape.
+- Added an offline custom-backend test and documentation for training, evaluating, comparing, and selecting the custom CNN.
