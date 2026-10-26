@@ -29,3 +29,8 @@
 
 - Added `MODEL_BACKEND` support (`pretrained` by default; `custom` after a custom checkpoint is trained) without changing the leaf gate, treatment data, or API response shape.
 - Added an offline custom-backend test and documentation for training, evaluating, comparing, and selecting the custom CNN.
+
+## 2026-10-26 — Evaluation guardrail
+
+- Custom CNN checkpoints now record the classes used for training.
+- The full-project evaluator rejects a crop-subset checkpoint before producing a misleading all-class test score.

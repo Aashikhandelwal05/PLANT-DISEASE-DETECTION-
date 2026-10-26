@@ -90,6 +90,8 @@ For a quicker tomato-only experiment:
 python scripts/train_custom_cnn.py --crops tomato
 ```
 
+This produces a tomato-only checkpoint for experimentation; do not use it with the full 15-class `evaluate_custom_cnn.py` comparison. Train without `--crops` for the project-wide test and comparison report.
+
 This writes `models/custom_cnn.pt`, `models/custom_cnn_training_curves.png`, and `models/custom_cnn_training.json`.
 
 ### Google Colab fallback

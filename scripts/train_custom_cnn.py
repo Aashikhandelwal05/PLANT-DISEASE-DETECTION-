@@ -178,7 +178,14 @@ def main() -> None:
             best_accuracy = val_accuracy
             stale_epochs = 0
             MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"state_dict": model.state_dict(), "input_size": args.input_size, "num_classes": len(classes), "classes": classes}, MODEL_PATH)
+            torch.save({
+                "state_dict": model.state_dict(),
+                "input_size": args.input_size,
+                "num_classes": len(classes),
+                "classes": classes,
+                "trained_classes": sorted(frame.class_name.unique().tolist()),
+                "crops": args.crops or [],
+            }, MODEL_PATH)
         else:
             stale_epochs += 1
             if stale_epochs >= args.patience:
@@ -191,6 +198,8 @@ def main() -> None:
         "training_seconds": time.perf_counter() - training_started,
         "input_size": args.input_size,
         "classes": classes,
+        "trained_classes": sorted(frame.class_name.unique().tolist()),
+        "crops": args.crops or [],
     }, indent=2) + "\n", encoding="utf-8")
     print(f"Saved best validation checkpoint to {MODEL_PATH}; best validation accuracy {best_accuracy:.4f}.")
 

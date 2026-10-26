@@ -39,6 +39,20 @@ def main() -> None:
     checkpoint = torch.load(args.model, map_location="cpu")
     if checkpoint.get("classes") != classes:
         raise ValueError("Custom CNN checkpoint classes differ from models/classes.json.")
+    if "trained_classes" not in checkpoint:
+        raise ValueError(
+            "This custom checkpoint lacks training-class metadata. Retrain it with "
+            "the current scripts/train_custom_cnn.py before evaluating."
+        )
+    trained_classes = set(checkpoint["trained_classes"])
+    if trained_classes != set(classes):
+        missing = sorted(set(classes) - trained_classes)
+        raise ValueError(
+            "This checkpoint was trained on a subset of classes and cannot be "
+            "evaluated against the full 15-class test split. Missing classes: "
+            f"{', '.join(missing)}. Train without --crops for the project-wide "
+            "comparison, or create a matching subset evaluator."
+        )
     model = CustomCNN(len(classes), int(checkpoint.get("input_size", 128)))
     model.load_state_dict(checkpoint["state_dict"])
     device = get_device()
