@@ -124,6 +124,37 @@ def _verify_api_key(x_api_key: str | None = Security(_api_key_header)) -> None:
         )
 
 
+def _prediction_response(result: dict) -> JSONResponse:
+    """Format the normal prediction or leaf-gate rejection response."""
+    if result.get("status") == "not_a_leaf":
+        return JSONResponse(
+            content={
+                "status": "not_a_leaf",
+                "message": result["message"],
+                "leaf_score": round(result["leaf_score"], 4),
+            }
+        )
+
+    return JSONResponse(
+        content={
+            "status": "ok",
+            "leaf_score": round(result["leaf_score"], 4),
+            "crop": result["crop"],
+            "disease": result["disease"],
+            "class_name": result["class_name"],
+            "confidence": round(result["confidence"], 4),
+            "top_3": [
+                {
+                    "class_name": entry["class_name"],
+                    "confidence": round(entry["confidence"], 4),
+                }
+                for entry in result["top_k"]
+            ],
+            "treatment": result["treatment"],
+        }
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
@@ -214,33 +245,7 @@ async def predict(
             pass
 
     # ── Build response ─────────────────────────────────────────────────────────
-    if result.get("status") == "not_a_leaf":
-        return JSONResponse(
-            content={
-                "status": "not_a_leaf",
-                "message": result["message"],
-                "leaf_score": round(result["leaf_score"], 4),
-            }
-        )
-
-    return JSONResponse(
-        content={
-            "status": "ok",
-            "leaf_score": round(result["leaf_score"], 4),
-            "crop":       result["crop"],
-            "disease":    result["disease"],
-            "class_name": result["class_name"],
-            "confidence": round(result["confidence"], 4),
-            "top_3":      [
-                {
-                    "class_name": e["class_name"],
-                    "confidence": round(e["confidence"], 4),
-                }
-                for e in result["top_k"]
-            ],
-            "treatment": result["treatment"],
-        }
-    )
+    return _prediction_response(result)
 
 
 def _get_custom_backend():
@@ -314,30 +319,4 @@ async def predict_custom(
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
 
-    if result.get("status") == "not_a_leaf":
-        return JSONResponse(
-            content={
-                "status": "not_a_leaf",
-                "message": result["message"],
-                "leaf_score": round(result["leaf_score"], 4),
-            }
-        )
-
-    return JSONResponse(
-        content={
-            "status": "ok",
-            "leaf_score": round(result["leaf_score"], 4),
-            "crop": result["crop"],
-            "disease": result["disease"],
-            "class_name": result["class_name"],
-            "confidence": round(result["confidence"], 4),
-            "top_3": [
-                {
-                    "class_name": entry["class_name"],
-                    "confidence": round(entry["confidence"], 4),
-                }
-                for entry in result["top_k"]
-            ],
-            "treatment": result["treatment"],
-        }
-    )
+    return _prediction_response(result)

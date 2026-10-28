@@ -29,8 +29,6 @@ logger = get_logger(__name__)
 SPLITS_PATH = Path("data/splits.csv")
 CLASSES_PATH = Path("models/classes.json")
 MODEL_PATH = Path("models/custom_cnn.pt")
-CURVES_PATH = Path("models/custom_cnn_training_curves.png")
-TRAINING_METADATA_PATH = Path("models/custom_cnn_training.json")
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
 
@@ -51,12 +49,16 @@ class PlantDataset(Dataset):
 
 def transforms_for(input_size: int):
     train = transforms.Compose([
-        transforms.RandomResizedCrop(input_size, scale=(0.75, 1.0)),
+        transforms.RandomResizedCrop(input_size, scale=(0.65, 1.0)),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(12),
-        transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.15, hue=0.03),
+        transforms.RandomVerticalFlip(p=0.1),
+        transforms.RandomRotation(20),
+        transforms.RandomPerspective(distortion_scale=0.3, p=0.4),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.06),
+        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5)),
         transforms.ToTensor(),
         transforms.Normalize(MEAN, STD),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),
     ])
     evaluate = transforms.Compose([
         transforms.Resize(int(input_size * 1.15)),
@@ -109,22 +111,26 @@ def save_curves(history: dict[str, list[float]], path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train CustomCNN from scratch.")
-    parser.add_argument("--epochs", type=int, default=35)
-    parser.add_argument("--batch", type=int, default=64)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--input-size", type=int, default=128)
-    parser.add_argument("--crops", nargs="+", help="Optional crop prefixes, e.g. --crops tomato")
+    parser.add_argument("--crops", nargs="+", default=["tomato"], help="Crop prefixes to train on (default: tomato)")
+    parser.add_argument("--output-model", type=Path, default=MODEL_PATH, help="Checkpoint output path.")
+    parser.add_argument("--output-curves", type=Path, help="Training-curves PNG output path.")
+    parser.add_argument("--output-metadata", type=Path, help="Training-metadata JSON output path.")
     args = parser.parse_args()
 
     fix_seeds(SEED)
     training_started = time.perf_counter()
     if not SPLITS_PATH.exists() or not CLASSES_PATH.exists():
         raise FileNotFoundError("Expected data/splits.csv and models/classes.json before training.")
-    classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8"))
-    class_to_idx = {name: index for index, name in enumerate(classes)}
+    all_classes = json.loads(CLASSES_PATH.read_text(encoding="utf-8"))
     frame = filter_crops(pd.read_csv(SPLITS_PATH), args.crops)
+    classes = [name for name in all_classes if name in set(frame.class_name)]
+    class_to_idx = {name: index for index, name in enumerate(classes)}
     train_frame = frame[frame.split == "train"].reset_index(drop=True)
     val_frame = frame[frame.split == "val"].reset_index(drop=True)
     if train_frame.empty or val_frame.empty:
@@ -141,6 +147,9 @@ def main() -> None:
     train_loader = DataLoader(train_set, batch_size=args.batch, sampler=sampler, num_workers=0, pin_memory=pin_memory)
     val_loader = DataLoader(val_set, batch_size=args.batch, shuffle=False, num_workers=0, pin_memory=pin_memory)
 
+    output_model = args.output_model
+    output_curves = args.output_curves or output_model.with_name(f"{output_model.stem}_training_curves.png")
+    output_metadata = args.output_metadata or output_model.with_name(f"{output_model.stem}_training.json")
     model = CustomCNN(len(classes), args.input_size).to(device)
     print(describe_model(model))
     print(f"Training {len(train_set):,} images; validating {len(val_set):,} images; device={device}.")
@@ -161,6 +170,7 @@ def main() -> None:
             logits = model(images)
             loss = criterion(logits, labels)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
             optimizer.step()
             loss_sum += loss.item() * labels.size(0)
             correct += (logits.argmax(1) == labels).sum().item()
@@ -177,7 +187,7 @@ def main() -> None:
         if val_accuracy > best_accuracy:
             best_accuracy = val_accuracy
             stale_epochs = 0
-            MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+            output_model.parent.mkdir(parents=True, exist_ok=True)
             torch.save({
                 "state_dict": model.state_dict(),
                 "input_size": args.input_size,
@@ -185,14 +195,14 @@ def main() -> None:
                 "classes": classes,
                 "trained_classes": sorted(frame.class_name.unique().tolist()),
                 "crops": args.crops or [],
-            }, MODEL_PATH)
+            }, output_model)
         else:
             stale_epochs += 1
             if stale_epochs >= args.patience:
                 print(f"Early stopping after {epoch} epochs; best validation accuracy {best_accuracy:.4f}.")
                 break
-    save_curves(history, CURVES_PATH)
-    TRAINING_METADATA_PATH.write_text(json.dumps({
+    save_curves(history, output_curves)
+    output_metadata.write_text(json.dumps({
         "best_validation_accuracy": best_accuracy,
         "epochs_completed": len(history["train_loss"]),
         "training_seconds": time.perf_counter() - training_started,
@@ -201,7 +211,10 @@ def main() -> None:
         "trained_classes": sorted(frame.class_name.unique().tolist()),
         "crops": args.crops or [],
     }, indent=2) + "\n", encoding="utf-8")
-    print(f"Saved best validation checkpoint to {MODEL_PATH}; best validation accuracy {best_accuracy:.4f}.")
+    classes_path = output_model.with_name(f"{output_model.stem}_classes.json")
+    classes_path.write_text(json.dumps(classes, indent=2) + "\n", encoding="utf-8")
+    print(f"Saved best validation checkpoint to {output_model}; best validation accuracy {best_accuracy:.4f}.")
+    print(f"Saved checkpoint class list to {classes_path}.")
 
 
 if __name__ == "__main__":

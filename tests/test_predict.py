@@ -33,8 +33,8 @@ DUMMY_CLASSES = [
     "Tomato___healthy",
     "Tomato___Early_blight",
     "Tomato___Late_blight",
-    "Potato___Early_blight",
-    "Potato___healthy",
+    "Tomato_Leaf_Mold",
+    "Tomato_Septoria_leaf_spot",
 ]
 
 
@@ -145,3 +145,34 @@ def test_custom_backend_loads_and_predicts(tmp_path, sample_image):
     result = predict_image(sample_image, model, classes, device, leaf_gate=MockGate())
     assert result["status"] == "ok"
     assert result["class_name"] in DUMMY_CLASSES
+
+
+def test_prediction_masks_classes_not_trained_by_custom_checkpoint(sample_image):
+    class FixedLogitModel(torch.nn.Module):
+        input_size = 224
+        active_class_indices = [1, 3]
+
+        def forward(self, tensor):
+            # Index 0 would win without the custom-checkpoint class mask.
+            return torch.tensor([[10.0, 2.0, 3.0, 4.0]], device=tensor.device)
+
+    classes = [
+        "Tomato_healthy",
+        "Tomato_Late_blight",
+        "Tomato_Early_blight",
+        "Tomato_Leaf_Mold",
+    ]
+    result = predict_image(
+        sample_image,
+        FixedLogitModel(),
+        classes,
+        torch.device("cpu"),
+        top_k=3,
+        leaf_gate=MockGate(),
+    )
+
+    assert result["class_name"] == "Tomato_Leaf_Mold"
+    assert {entry["class_name"] for entry in result["top_k"]} == {
+        "Tomato_Late_blight",
+        "Tomato_Leaf_Mold",
+    }

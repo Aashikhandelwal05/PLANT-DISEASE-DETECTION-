@@ -36,6 +36,10 @@ def main() -> None:
     args = parser.parse_args()
     if not args.model.exists():
         raise FileNotFoundError(f"Custom CNN checkpoint not found: {args.model}")
+    if args.classes == Path("models/classes.json"):
+        checkpoint_classes = args.model.with_name(f"{args.model.stem}_classes.json")
+        if checkpoint_classes.exists():
+            args.classes = checkpoint_classes
     classes = json.loads(args.classes.read_text(encoding="utf-8"))
     checkpoint = torch.load(args.model, map_location="cpu")
     if checkpoint.get("classes") != classes:

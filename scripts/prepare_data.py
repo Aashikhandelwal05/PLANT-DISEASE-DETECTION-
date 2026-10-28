@@ -184,7 +184,7 @@ def print_stats(rows: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare PlantVillage dataset splits.")
-    parser.add_argument("--src", type=Path, default=Path("data/raw"),
+    parser.add_argument("--src", type=Path, default=Path("data/raw/PlantVillage"),
                         help="Root of raw images (class sub-folders).")
     parser.add_argument("--out", type=Path, default=Path("data/splits.csv"),
                         help="Output CSV file path.")

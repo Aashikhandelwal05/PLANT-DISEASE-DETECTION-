@@ -33,7 +33,7 @@ def fake_class_images(tmp_path: Path) -> dict[str, list[Path]]:
     Build a fake class_images dict with 3 classes, 30 images each.
     Files are not real images — tests only check path strings.
     """
-    classes = ["Tomato___healthy", "Tomato___Early_blight", "Potato___Late_blight"]
+    classes = ["Tomato_healthy", "Tomato_Early_blight", "Tomato_Late_blight"]
     data: dict[str, list[Path]] = {}
     for cls in classes:
         cls_dir = tmp_path / cls

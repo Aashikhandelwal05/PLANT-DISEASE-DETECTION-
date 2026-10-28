@@ -1,10 +1,10 @@
-# Plant Disease Detection
+# Tomato Disease Detection
 
-A PyTorch and FastAPI application for classifying plant-leaf diseases, returning treatment guidance, and rejecting images that do not look like plant leaves before they reach the disease classifier.
+A PyTorch and FastAPI application for classifying **tomato** leaf diseases (10 classes), returning treatment guidance, and rejecting images that do not look like plant leaves before they reach the disease classifier.
 
 ## Highlights
 
-- Fine-tuned EfficientNet-B0 disease classifier; MobileNetV3 is also supported for training.
+- Fine-tuned EfficientNet-B0 disease classifier trained on **tomato classes only** (10 classes); MobileNetV3 is also supported.
 - Returns crop, disease, confidence, alternative predictions, and treatment guidance.
 - Uses a frozen, zero-shot CLIP ViT-B/32 leaf gate. CLIP is never trained or fine-tuned.
 - Provides a protected FastAPI endpoint and offline unit tests.
@@ -22,8 +22,6 @@ The included disease model was evaluated on the held-out PlantVillage test split
 | Held-out real leaves wrongly rejected | 168/3,102 (5.42%) |
 
 The gate threshold was selected only on validation images (3,095 leaf and 75 non-leaf images), then evaluated on the held-out test splits.
-
-> The non-leaf evaluation data uses the public scikit-learn digits corpus, which is narrow document-like coverage. Add broader real-world negatives before production use.
 
 ## Requirements
 
@@ -61,7 +59,7 @@ Place the original, non-augmented PlantVillage images in class folders under `da
 python scripts/prepare_data.py
 ```
 
-Train the default EfficientNet-B0 model:
+Train the default EfficientNet-B0 model (tomato-only by default):
 
 ```powershell
 python train.py
@@ -70,8 +68,9 @@ python train.py
 Useful variants:
 
 ```powershell
-python train.py --crops tomato potato
-python train.py --model mobilenet
+python train.py --crops tomato         # explicit tomato-only (same as default)
+python train.py --model mobilenet      # MobileNetV3-Large backbone
+python train.py --crops all            # all available crops (override default)
 ```
 
 Training writes `models/best.pt`, `models/classes.json`, and `models/training_curves.png`.
@@ -84,13 +83,13 @@ The custom CNN has no pretrained weights. It uses the same existing `data/splits
 python scripts/train_custom_cnn.py
 ```
 
-For a quicker tomato-only experiment:
+For a quicker tomato-only experiment (same as the default):
 
 ```powershell
 python scripts/train_custom_cnn.py --crops tomato
 ```
 
-This produces a tomato-only checkpoint for experimentation. Train without `--crops` to evaluate all 15 project classes.
+This produces a tomato-only checkpoint. The project is now tomato-only, so this is the standard invocation.
 
 Evaluate a tomato-only checkpoint only on tomato test images:
 
@@ -197,7 +196,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 Expected response:
 
 ```json
-{"status":"ok","model_ready":true,"num_classes":15}
+{"status":"ok","model_ready":true,"num_classes":10}
 ```
 
 ### Prediction request

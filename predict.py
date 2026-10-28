@@ -11,7 +11,7 @@ Usage
 
 Output
 ------
-    Crop          : Tomato
+    Crop          : Tomato  (tomato-only build)
     Disease       : Early Blight
     Confidence    : 95.32%
 
@@ -49,8 +49,9 @@ logger = get_logger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 MODELS_DIR      = Path("models")
 BEST_MODEL_PATH = MODELS_DIR / "best.pt"
-CUSTOM_MODEL_PATH = MODELS_DIR / "custom_cnn.pt"
+CUSTOM_MODEL_PATH = Path(os.getenv("CUSTOM_MODEL_PATH", MODELS_DIR / "custom_cnn.pt"))
 CLASSES_JSON    = MODELS_DIR / "classes.json"
+CUSTOM_CLASSES_JSON = Path(os.getenv("CUSTOM_CLASSES_PATH", MODELS_DIR / "custom_cnn_classes.json"))
 TREATMENTS_JSON = Path("data/treatments.json")
 
 IMG_SIZE      = 224
@@ -90,6 +91,12 @@ def load_model(
 ):
     """Load model and class list, returning (model, classes, device)."""
     resolved_backend = get_model_backend(backend)
+    if resolved_backend == "custom":
+        model_path = CUSTOM_MODEL_PATH if model_path == BEST_MODEL_PATH else model_path
+        # New tomato-only checkpoints carry their own compact class list. Keep
+        # supporting older checkpoints that use the project-wide list.
+        if classes_path == CLASSES_JSON and CUSTOM_CLASSES_JSON.exists():
+            classes_path = CUSTOM_CLASSES_JSON
     cache_key = (resolved_backend, str(model_path), str(classes_path), str(device))
     if cache_key in _model_cache:
         return _model_cache[cache_key]
@@ -107,7 +114,6 @@ def load_model(
     num_classes = len(classes)
 
     if resolved_backend == "custom":
-        model_path = CUSTOM_MODEL_PATH if model_path == BEST_MODEL_PATH else model_path
         if not model_path.exists():
             raise FileNotFoundError(f"Custom CNN checkpoint not found at {model_path}. Run scripts/train_custom_cnn.py first.")
         checkpoint = torch.load(model_path, map_location="cpu")
@@ -118,6 +124,18 @@ def load_model(
         model = CustomCNN(num_classes, input_size=int(checkpoint.get("input_size", 128)))
         model.load_state_dict(checkpoint["state_dict"])
         model.input_size = int(checkpoint.get("input_size", 128))
+        trained_classes = checkpoint.get("trained_classes")
+        if trained_classes:
+            unknown = sorted(set(trained_classes) - set(classes))
+            if unknown:
+                raise ValueError(
+                    "Custom CNN checkpoint references classes absent from its "
+                    f"class list: {', '.join(unknown)}."
+                )
+            model.active_class_indices = [
+                index for index, class_name in enumerate(classes)
+                if class_name in set(trained_classes)
+            ]
     else:
         # Try EfficientNet-B0 first, fall back to MobileNetV3.
         try:
@@ -202,26 +220,29 @@ def predict_image(
 
     with torch.no_grad():
         logits = model(tensor)
+        active_indices = getattr(model, "active_class_indices", None)
+        if active_indices:
+            candidate_indices = list(active_indices)
+            logits = logits[:, candidate_indices]
+        else:
+            candidate_indices = list(range(len(classes)))
         probs = torch.softmax(logits, dim=1)[0]
 
-    top_probs, top_idx = probs.topk(min(top_k, len(classes)))
+    top_probs, top_idx = probs.topk(min(top_k, len(candidate_indices)))
     top_probs = top_probs.cpu().tolist()
-    top_idx   = top_idx.cpu().tolist()
+    top_idx = [candidate_indices[index] for index in top_idx.cpu().tolist()]
 
     best_class = classes[top_idx[0]]
     best_conf  = top_probs[0]
 
     # Hardcoded crop/disease lookup — PlantVillage class names use
     # inconsistent separators (_  __  ___) so string-splitting is unreliable.
+    # Tomato-only build: class labels map to the project's supported diseases.
     _CLASS_LABELS: dict[str, tuple[str, str]] = {
-        "Pepper__bell___Bacterial_spot":                    ("Pepper (Bell)",  "Bacterial Spot"),
-        "Pepper__bell___healthy":                           ("Pepper (Bell)",  "Healthy"),
-        "Potato___Early_blight":                            ("Potato",         "Early Blight"),
-        "Potato___Late_blight":                             ("Potato",         "Late Blight"),
-        "Potato___healthy":                                 ("Potato",         "Healthy"),
         "Tomato_Bacterial_spot":                            ("Tomato",         "Bacterial Spot"),
         "Tomato_Early_blight":                              ("Tomato",         "Early Blight"),
         "Tomato_Late_blight":                               ("Tomato",         "Late Blight"),
+        "Tomato_Leaf_Miner":                                ("Tomato",         "Leaf Miner"),
         "Tomato_Leaf_Mold":                                 ("Tomato",         "Leaf Mold"),
         "Tomato_Septoria_leaf_spot":                        ("Tomato",         "Septoria Leaf Spot"),
         "Tomato_Spider_mites_Two_spotted_spider_mite":      ("Tomato",         "Spider Mites (Two-spotted)"),

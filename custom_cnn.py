@@ -7,13 +7,13 @@ from torch import nn
 
 
 class CustomCNN(nn.Module):
-    """Four Conv-BatchNorm-ReLU-MaxPool blocks followed by a linear head."""
+    """Six Conv-BatchNorm-ReLU-MaxPool blocks followed by a linear head."""
 
-    def __init__(self, num_classes: int, input_size: int = 128, dropout: float = 0.4):
+    def __init__(self, num_classes: int, input_size: int = 128, dropout: float = 0.5):
         super().__init__()
         if input_size < 16:
             raise ValueError("input_size must be at least 16 pixels.")
-        channels = (32, 64, 128, 256)
+        channels = (32, 64, 128, 256, 512, 512)
         layers: list[nn.Module] = []
         in_channels = 3
         for out_channels in channels:

@@ -9,9 +9,8 @@ Two-stage fine-tuning:
 
 Usage
 -----
-    python train.py                        # EfficientNet-B0, all crops
-    python train.py --model mobilenet      # MobileNetV3-Large
-    python train.py --crops tomato         # tomato classes only
+    python train.py                        # EfficientNet-B0, tomato only (default)
+    python train.py --model mobilenet      # MobileNetV3-Large, tomato only
     python train.py --epochs1 5 --epochs2 15
 """
 
@@ -214,8 +213,8 @@ def main() -> None:
     parser.add_argument("--model",   default="efficientnet",
                         choices=["efficientnet", "mobilenet"],
                         help="Backbone architecture.")
-    parser.add_argument("--crops",   nargs="+", default=None,
-                        help="Filter to specific crops, e.g. --crops tomato potato.")
+    parser.add_argument("--crops", nargs="+", default=["tomato"],
+                        help="Tomato is the only supported crop.")
     parser.add_argument("--epochs1", type=int, default=5,
                         help="Stage-1 epochs (head only).")
     parser.add_argument("--epochs2", type=int, default=20,
@@ -239,15 +238,13 @@ def main() -> None:
 
     df = pd.read_csv(SPLITS_CSV)
 
-    # Optional crop filter
-    if args.crops:
-        crop_lower = [c.lower() for c in args.crops]
-        mask = df["class_name"].str.lower().apply(
-            lambda n: any(c in n for c in crop_lower)
-        )
-        df = df[mask].reset_index(drop=True)
-        logger.info("Crop filter applied. Classes remaining: %d",
-                    df["class_name"].nunique())
+    # Optional crop filter — default is tomato-only
+    if {crop.lower() for crop in args.crops} != {"tomato"}:
+        raise ValueError("This project supports tomato classes only. Use --crops tomato.")
+    df = df[df["class_name"].str.lower().str.startswith("tomato")].reset_index(drop=True)
+    if df.empty:
+        raise ValueError("No tomato rows found in data/splits.csv.")
+    logger.info("Tomato-only filter applied. Classes remaining: %d", df["class_name"].nunique())
 
     classes = sorted(df["class_name"].unique())
     class_to_idx = {c: i for i, c in enumerate(classes)}

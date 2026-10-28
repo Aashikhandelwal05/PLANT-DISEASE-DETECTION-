@@ -31,8 +31,8 @@ DUMMY_CLASSES = [
     "Tomato___healthy",
     "Tomato___Early_blight",
     "Tomato___Late_blight",
-    "Potato___Early_blight",
-    "Potato___healthy",
+    "Tomato_Leaf_Mold",
+    "Tomato_Septoria_leaf_spot",
 ]
 
 
